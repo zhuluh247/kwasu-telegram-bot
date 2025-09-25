@@ -258,7 +258,7 @@ async function findMatchingFoundItems(searchItem) {
 // Set webhook
 async function setWebhook() {
   try {
-    const url = `https://your-render-url.onrender.com/webhook/${TELEGRAM_TOKEN}`;
+    const url = `https://kwasu-telegram-bot.onrender.com/webhook/${TELEGRAM_TOKEN}`;
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook`, {
       url: url
     });
@@ -272,4 +272,5 @@ const PORT = process.env.PORT || 3000;
 expressApp.listen(PORT, () => {
   console.log('Telegram bot running!');
   setWebhook();
+
 });
