@@ -40,12 +40,12 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       }
       // Report found
       else if (text === '2') {
-        await sendTelegramMessage(chatId, '🎁 *Report Found Item*\n\nPlease provide the following details:\nITEM, LOCATION, CONTACT_PHONE\n\nExample: "Keys, Cafeteria, 08012345678"');
+        await sendTelegramMessage(chatId, '🎁 *Report Found Item*\n\nPlease provide the following details:\nITEM, LOCATION, YOUR_PHONE_NUMBER\n\n⚠️ *Important:* The phone number should be YOUR phone number (the person who found the item) so the owner can contact you.\n\nExample: "Keys, Cafeteria, 08012345678"');
         await set(ref(db, `users/${from}`), { action: 'report_found' });
       }
       // Search
       else if (text === '3') {
-        await sendTelegramMessage(chatId, '🔎 *Search for my lost Item*\n\nPlease reply with a keyword to search:\n\nExample: "water", "keys", "bag"');
+        await sendTelegramMessage(chatId, '🔎 *Search for my lost Item*\n\nPlease reply with a keyword to search:\n\nExample: "water", "keys", "bag"\n\n💡 *Tip: Keep checking back regularly as new items are reported all the time!*');
         await set(ref(db, `users/${from}`), { action: 'search' });
       }
       // Contact developer
@@ -68,7 +68,8 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 async function handleTelegramResponse(from, msg, chatId) {
   try {
     // Get user state
-    const userSnapshot = await get(child(ref(db), `users/${from}`));
+    const userRef = ref(db, `users/${from}`);
+    const userSnapshot = await get(userRef);
     const user = userSnapshot.val();
     
     if (!user) {
@@ -80,7 +81,7 @@ async function handleTelegramResponse(from, msg, chatId) {
     if (user.action === 'report_lost' || user.action === 'report_found') {
       const parts = msg.split(',');
       if (parts.length < 3) {
-        await sendTelegramMessage(chatId, `⚠️ Format error. Please use: ${user.action === 'report_lost' ? 'ITEM, LOCATION, DESCRIPTION' : 'ITEM, LOCATION, CONTACT_PHONE'}`);
+        await sendTelegramMessage(chatId, `⚠️ Format error. Please use: ${user.action === 'report_lost' ? 'ITEM, LOCATION, DESCRIPTION' : 'ITEM, LOCATION, YOUR_PHONE_NUMBER'}`);
         return;
       }
       
@@ -104,7 +105,8 @@ async function handleTelegramResponse(from, msg, chatId) {
       }
       
       // Save to Firebase
-      const newReportRef = push(ref(db, 'reports'));
+      const reportsRef = ref(db, 'reports');
+      const newReportRef = push(reportsRef);
       await set(newReportRef, reportData);
 
       // Send confirmation
@@ -114,6 +116,14 @@ async function handleTelegramResponse(from, msg, chatId) {
         confirmationMsg += `📦 *Item:* ${item}\n`;
         confirmationMsg += `📍 *Location:* ${location}\n`;
         confirmationMsg += `📝 *Description:* ${reportData.description}\n\n`;
+        
+        // Tips for lost item owner
+        confirmationMsg += `💡 *Tips for You (Item Owner):*\n`;
+        confirmationMsg += `• Keep checking back regularly for updates\n`;
+        confirmationMsg += `• Spread the word about your lost item\n`;
+        confirmationMsg += `• Check locations where you might have lost it\n`;
+        confirmationMsg += `• Be specific about unique features when inquiring\n\n`;
+        
         confirmationMsg += `🔍 *We're searching for matching found items...*\n\n`;
         
         // Check for matching found items
@@ -128,13 +138,10 @@ async function handleTelegramResponse(from, msg, chatId) {
             confirmationMsg += `   ⏰ ${new Date(item.timestamp).toLocaleString()}\n\n`;
           });
           
-          confirmationMsg += `💡 *Tip:* When contacting, please provide details about your lost item to verify ownership.\n\n`;
+          confirmationMsg += `💡 *When contacting:* Please provide details about your item to verify ownership.\n\n`;
         } else {
           confirmationMsg += `😔 *No matching found items yet.*\n\n`;
-          confirmationMsg += `💡 *What to do next:*\n`;
-          confirmationMsg += `• Check back regularly for updates\n`;
-          confirmationMsg += `• Spread the word about your lost item\n`;
-          confirmationMsg += `• Contact locations where you might have lost it\n\n`;
+          confirmationMsg += `🔄 *Please keep checking back regularly as new items are reported every day!*\n\n`;
         }
         
         confirmationMsg += `🙏 *Thank you for using KWASU Lost & Found Bot!*`;
@@ -144,19 +151,24 @@ async function handleTelegramResponse(from, msg, chatId) {
         let confirmationMsg = `✅ *Found Item Reported Successfully!*\n\n`;
         confirmationMsg += `📦 *Item:* ${item}\n`;
         confirmationMsg += `📍 *Location:* ${location}\n`;
-        confirmationMsg += `📞 *Contact:* ${reportData.contact_phone}\n`;
+        confirmationMsg += `📞 *Your Phone Number:* ${reportData.contact_phone}\n`;
         confirmationMsg += `📝 *Description:* ${reportData.description}\n\n`;
         
-        // Safety warning
-        confirmationMsg += `⚠️ *IMPORTANT SAFETY NOTICE:*\n\n`;
-        confirmationMsg += `When someone contacts you to claim this item, please:\n\n`;
-        confirmationMsg += `🔐 *Ask for verification* - Request specific details about the item such as:\n`;
-        confirmationMsg += `• Exact color\n`;
-        confirmationMsg += `• Shape or size\n`;
-        confirmationMsg += `• Visible marks, scratches, or unique features\n`;
-        confirmationMsg += `• Contents (if applicable)\n\n`;
-        confirmationMsg += `🚫 *Report false claimants* - If someone provides incorrect details:\n`;
-        confirmationMsg += `• Do not return the item\n`;
+        // Safety tips for found item owner
+        confirmationMsg += `🛡️ *Safety Tips for You (Item Finder):*\n`;
+        confirmationMsg += `• Always ask claimants to describe the item in detail\n`;
+        confirmationMsg += `• Ask about specific features, colors, or marks\n`;
+        confirmationMsg += `• Never return the item without proper verification\n`;
+        confirmationMsg += `• Meet in public places if possible\n`;
+        confirmationMsg += `• Trust your instincts - if something feels wrong, contact security\n\n`;
+        
+        confirmationMsg += `⚠️ *Important Safety Notice:*\n\n`;
+        confirmationMsg += `🔐 *Verification Process:*\n`;
+        confirmationMsg += `• Ask about: Exact color, size, shape, unique features\n`;
+        confirmationMsg += `• Ask about contents (if applicable)\n`;
+        confirmationMsg += `• Ask when and where the item was lost\n\n`;
+        confirmationMsg += `🚫 *Report False Claimants:*\n`;
+        confirmationMsg += `• If someone provides wrong details, do NOT return the item\n`;
         confirmationMsg += `• Contact KWASU WORKS immediately\n`;
         confirmationMsg += `• Provide the claimant's phone number\n\n`;
         confirmationMsg += `🛡️ *This helps maintain a safe community and prevents fraud.*\n\n`;
@@ -171,34 +183,71 @@ async function handleTelegramResponse(from, msg, chatId) {
     
     // Handle search
     else if (user.action === 'search') {
-      const reportsSnapshot = await get(child(ref(db), 'reports'));
+      const reportsRef = ref(db, 'reports');
+      const reportsSnapshot = await get(reportsRef);
       const reports = reportsSnapshot.val();
       
       if (!reports || Object.keys(reports).length === 0) {
-        await sendTelegramMessage(chatId, '❌ No items found in the database.');
+        await sendTelegramMessage(chatId, '❌ No items found in the database.\n\n💡 *New items are reported regularly. Please check back again soon!*');
         return;
       }
 
-      let response = `🔎 *Search Results*\n\nFound items matching "${msg}":\n\n`;
-      let found = false;
+      let response = `🔎 *Search Results for "${msg}"*\n\n`;
+      let foundLost = false;
+      let foundFound = false;
       
-      // Search in item names, locations, and descriptions
+      // Separate lost and found items
       Object.entries(reports).forEach(([key, report]) => {
         const searchText = `${report.item} ${report.location} ${report.description}`.toLowerCase();
         if (searchText.includes(msg.toLowerCase())) {
-          found = true;
-          response += `📦 *${report.item}*\n`;
-          response += `📍 Location: ${report.location}\n`;
-          response += `📝 ${report.description}`;
-          if (report.type === 'found') {
-            response += `\n📞 Contact: ${report.contact_phone}`;
+          if (report.type === 'lost') {
+            foundLost = true;
+          } else {
+            foundFound = true;
           }
-          response += `\n⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
         }
       });
       
-      if (!found) {
-        response = `❌ No items found matching "${msg}".\n\nTry searching with different keywords or check the spelling.`;
+      // Show lost items first
+      if (foundLost) {
+        response += `🔍 *Lost Items Matching Your Search:*\n\n`;
+        Object.entries(reports).forEach(([key, report]) => {
+          if (report.type === 'lost') {
+            const searchText = `${report.item} ${report.location} ${report.description}`.toLowerCase();
+            if (searchText.includes(msg.toLowerCase())) {
+              response += `📦 *${report.item}*\n`;
+              response += `📍 Location: ${report.location}\n`;
+              response += `📝 ${report.description}\n`;
+              response += `⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
+            }
+          }
+        });
+      }
+      
+      // Show found items
+      if (foundFound) {
+        response += `🎁 *Found Items Matching Your Search:*\n\n`;
+        Object.entries(reports).forEach(([key, report]) => {
+          if (report.type === 'found') {
+            const searchText = `${report.item} ${report.location} ${report.description}`.toLowerCase();
+            if (searchText.includes(msg.toLowerCase())) {
+              response += `📦 *${report.item}*\n`;
+              response += `📍 Location: ${report.location}\n`;
+              response += `📝 ${report.description}\n`;
+              response += `📞 Contact: ${report.contact_phone}\n`;
+              response += `⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
+            }
+          }
+        });
+      }
+      
+      if (!foundLost && !foundFound) {
+        response += `❌ No items found matching "${msg}".\n\n`;
+        response += `💡 *Tips:*\n`;
+        response += `• Try different keywords (e.g., "phone" instead of "iPhone")\n`;
+        response += `• Check spelling\n`;
+        response += `• Keep checking back - new items are reported regularly!\n\n`;
+        response += `🔄 *Please search again in a few hours or tomorrow as new items may be reported!*`;
       }
       
       await sendTelegramMessage(chatId, response);
@@ -226,7 +275,8 @@ async function sendTelegramMessage(chatId, text) {
 // Helper function to find matching found items
 async function findMatchingFoundItems(searchItem) {
   try {
-    const reportsSnapshot = await get(child(ref(db), 'reports'));
+    const reportsRef = ref(db, 'reports');
+    const reportsSnapshot = await get(reportsRef);
     const reports = reportsSnapshot.val();
     
     if (!reports) return [];
@@ -272,5 +322,4 @@ const PORT = process.env.PORT || 3000;
 expressApp.listen(PORT, () => {
   console.log('Telegram bot running!');
   setWebhook();
-
 });
