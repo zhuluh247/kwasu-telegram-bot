@@ -38,9 +38,11 @@ async function sendTelegramMessage(chatId, text, keyboard = null) {
       };
     }
     
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, payload);
+    const response = await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, payload);
+    return response.data;
   } catch (error) {
-    console.error('Send message error:', error);
+    console.error('Send message error:', error.response?.data || error.message);
+    throw error; // Re-throw the error so we can catch it in the calling function
   }
 }
 
@@ -448,28 +450,28 @@ async function handleTelegramResponse(from, msg, chatId) {
       // Perform the update
       await update(reportRef, updateData);
       
-      // Send confirmation
-      const successMessage = `✅ *Item Successfully Marked as ${user.statusType === 'claimed' ? 'Claimed' : 'Recovered'}!*\n\n`;
-      successMessage += `📦 *Item:* ${report.item}\n`;
-      successMessage += `📍 *Location:* ${report.location}\n\n`;
-      
-      if (user.statusType === 'claimed') {
-        successMessage += `🎉 Thank you for returning the item to its rightful owner! This helps keep our community safe and trustworthy.\n\n`;
-        successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
-      } else {
-        successMessage += `🎉 We're glad you found your item! This helps us know that the system is working.\n\n`;
-        successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
+      // Send confirmation - SIMPLIFIED VERSION
+      try {
+        const successMessage = `✅ Item Successfully Marked as ${user.statusType === 'claimed' ? 'Claimed' : 'Recovered'}!\n\nItem: ${report.item}\nLocation: ${report.location}\n\nThank you for using this platform!`;
+        
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        
+        await sendTelegramMessage(chatId, successMessage, keyboard);
+      } catch (error) {
+        console.error('Error sending success message:', error);
+        // Try with a simpler message
+        const simpleMessage = `Item marked as ${user.statusType === 'claimed' ? 'claimed' : 'recovered'} successfully!`;
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, simpleMessage, keyboard);
       }
-      
-      successMessage += `🙏 *Thank you for using this platform ❤️*`;
-      
-      const keyboard = [
-        [
-          { text: '🔙 Menu', callback_data: 'menu' }
-        ]
-      ];
-      
-      await sendTelegramMessage(chatId, successMessage, keyboard);
       
       // Clear user state
       await remove(ref(db, `users/${from}`));
@@ -535,92 +537,25 @@ async function handleTelegramResponse(from, msg, chatId) {
       // Send confirmation
       if (user.action === 'report_lost') {
         // Enhanced confirmation for lost items
-        let confirmationMsg = `✅ *Lost Item Reported Successfully!*\n\n`;
-        confirmationMsg += `📦 *Item:* ${item}\n`;
-        confirmationMsg += `📍 *Location:* ${location}\n`;
-        confirmationMsg += `📝 *Description:* ${reportData.description}\n`;
-        confirmationMsg += `🔐 *Verification Code:* ${verificationCode}\n\n`;
+        let confirmationMsg = `✅ Lost Item Reported Successfully!\n\nItem: ${item}\nLocation: ${location}\nDescription: ${reportData.description}\nVerification Code: ${verificationCode}\n\nSave this code - you'll need it to mark your item as recovered.`;
         
-        // Tips for lost item owner
-        confirmationMsg += `💡 *Tips for You (Item Owner):*\n`;
-        confirmationMsg += `• Save this verification code - you'll need it to mark your item as recovered\n`;
-        confirmationMsg += `• Keep checking back regularly for updates\n`;
-        confirmationMsg += `• Spread the word about your lost item\n`;
-        confirmationMsg += `• Check locations where you might have lost it\n`;
-        confirmationMsg += `• Be specific about unique features when inquiring\n\n`;
-        
-        confirmationMsg += `🔍 *We're searching for matching found items...*\n\n`;
-        
-        // Check for matching found items
-        const foundItems = await findMatchingFoundItems(item);
-        if (foundItems.length > 0) {
-          confirmationMsg += `🎉 *Good news!* We found ${foundItems.length} matching item(s) that were reported found:\n\n`;
-          foundItems.forEach((item, index) => {
-            confirmationMsg += `${index + 1}. *${item.item}*\n`;
-            confirmationMsg += `   📍 Location: ${item.location}\n`;
-            confirmationMsg += `   📞 Contact: ${item.contact_phone}\n`;
-            confirmationMsg += `   📝 ${item.description}\n`;
-            confirmationMsg += `   ⏰ ${new Date(item.timestamp).toLocaleString()}\n\n`;
-          });
-          
-          confirmationMsg += `💡 *When contacting:* Please provide details about your item to verify ownership.\n\n`;
-        } else {
-          confirmationMsg += `😔 *No matching found items yet.*\n\n`;
-          confirmationMsg += `🔄 *Please keep checking back regularly as new items are reported every day!*\n\n`;
-        }
-        
-        // Add view details button
         const keyboard = [
-          [
-            { text: '📋 View Report Details', callback_data: `view_${reportId}` }
-          ],
           [
             { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
         
-        confirmationMsg += `🙏 *Thank you for using KWASU Lost & Found Bot!*`;
         await sendTelegramMessage(chatId, confirmationMsg, keyboard);
       } else {
         // Confirmation with safety warning for found items
-        let confirmationMsg = `✅ *Found Item Reported Successfully!*\n\n`;
-        confirmationMsg += `📦 *Item:* ${item}\n`;
-        confirmationMsg += `📍 *Location:* ${location}\n`;
-        confirmationMsg += `📞 *Your Phone Number:* ${reportData.contact_phone}\n`;
-        confirmationMsg += `📝 *Description:* ${reportData.description}\n`;
-        confirmationMsg += `🔐 *Verification Code:* ${verificationCode}\n\n`;
+        let confirmationMsg = `✅ Found Item Reported Successfully!\n\nItem: ${item}\nLocation: ${location}\nYour Phone: ${reportData.contact_phone}\nVerification Code: ${verificationCode}\n\nSave this code - you'll need it to mark the item as claimed.`;
         
-        // Safety tips for found item owner
-        confirmationMsg += `🛡️ *Safety Tips for You (Item Finder):*\n`;
-        confirmationMsg += `• Save this verification code - you'll need it to mark the item as claimed\n`;
-        confirmationMsg += `• Always ask claimants to describe the item in detail\n`;
-        confirmationMsg += `• Ask about specific features, colors, or marks\n`;
-        confirmationMsg += `• Never return the item without proper verification\n`;
-        confirmationMsg += `• Meet in public places if possible\n`;
-        confirmationMsg += `• Trust your instincts - if something feels wrong, contact security\n\n`;
-        
-        confirmationMsg += `⚠️ *Important Safety Notice:*\n\n`;
-        confirmationMsg += `🔐 *Verification Process:*\n`;
-        confirmationMsg += `• Ask about: Exact color, size, shape, unique features\n`;
-        confirmationMsg += `• Ask about contents (if applicable)\n`;
-        confirmationMsg += `• Ask when and where the item was lost\n\n`;
-        confirmationMsg += `🚫 *Report False Claimants:*\n`;
-        confirmationMsg += `• If someone provides wrong details, do NOT return the item\n`;
-        confirmationMsg += `• Contact KWASU WORKS immediately\n`;
-        confirmationMsg += `• Provide the claimant's phone number\n\n`;
-        confirmationMsg += `🛡️ *This helps maintain a safe community and prevents fraud.*\n\n`;
-        
-        // Add view details button
         const keyboard = [
-          [
-            { text: '📋 View Report Details', callback_data: `view_${reportId}` }
-          ],
           [
             { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
         
-        confirmationMsg += `🙏 *Thank you for your honesty and for helping others!*`;
         await sendTelegramMessage(chatId, confirmationMsg, keyboard);
       }
       
@@ -640,11 +575,11 @@ async function handleTelegramResponse(from, msg, chatId) {
             { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
-        await sendTelegramMessage(chatId, '❌ No items found in the database.\n\n💡 *New items are reported regularly. Please check back again soon!*', keyboard);
+        await sendTelegramMessage(chatId, '❌ No items found in the database.', keyboard);
         return;
       }
 
-      let response = `🔎 *Search Results for "${msg}"*\n\n`;
+      let response = `🔎 Search Results for "${msg}":\n\n`;
       let foundLost = false;
       let foundFound = false;
       let itemButtons = [];
@@ -656,11 +591,9 @@ async function handleTelegramResponse(from, msg, chatId) {
           if (report.type === 'lost') {
             foundLost = true;
             const status = report.recovered ? '✅ Recovered' : '❌ Not Recovered';
-            response += `${itemButtons.length + 1}. 🔍 *${report.item}*\n`;
-            response += `   📍 Location: ${report.location}\n`;
-            response += `   📝 ${report.description}\n`;
-            response += `   📊 Status: ${status}\n`;
-            response += `   ⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
+            response += `${itemButtons.length + 1}. 🔍 ${report.item}\n`;
+            response += `Location: ${report.location}\n`;
+            response += `Status: ${status}\n\n`;
             
             if (!report.recovered) {
               itemButtons.push([{ text: `${itemButtons.length + 1}. ${report.item}`, callback_data: `view_${key}` }]);
@@ -668,12 +601,10 @@ async function handleTelegramResponse(from, msg, chatId) {
           } else {
             foundFound = true;
             const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
-            response += `${itemButtons.length + 1}. 🎁 *${report.item}*\n`;
-            response += `   📍 Location: ${report.location}\n`;
-            response += `   📝 ${report.description}\n`;
-            response += `   📞 Contact: ${report.contact_phone}\n`;
-            response += `   📊 Status: ${status}\n`;
-            response += `   ⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
+            response += `${itemButtons.length + 1}. 🎁 ${report.item}\n`;
+            response += `Location: ${report.location}\n`;
+            response += `Contact: ${report.contact_phone}\n`;
+            response += `Status: ${status}\n\n`;
             
             if (!report.claimed) {
               itemButtons.push([{ text: `${itemButtons.length + 1}. ${report.item}`, callback_data: `view_${key}` }]);
@@ -683,12 +614,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       });
       
       if (!foundLost && !foundFound) {
-        response += `❌ No items found matching "${msg}".\n\n`;
-        response += `💡 *Tips:*\n`;
-        response += `• Try different keywords (e.g., "phone" instead of "iPhone")\n`;
-        response += `• Check spelling\n`;
-        response += `• Keep checking back - new items are reported regularly!\n\n`;
-        response += `🔄 *Please search again in a few hours or tomorrow as new items may be reported!*`;
+        response += `❌ No items found matching "${msg}".\nPlease try different keywords.`;
       }
       
       const keyboard = [
