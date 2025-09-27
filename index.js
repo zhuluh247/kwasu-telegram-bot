@@ -204,7 +204,7 @@ async function showUserReports(from, chatId) {
     const reports = reportsSnapshot.val();
     
     if (!reports || Object.keys(reports).length === 0) {
-      await sendTelegramMessage(chatId, '❌ You have not reported any items yet.\n\nUse the main menu to report a lost or found item.');
+      await sendTelegramMessage(chatId, '❌ You have not reported any items yet.\n\nUse the menu to report a lost or found item.');
       return;
     }
     
@@ -242,13 +242,13 @@ async function showUserReports(from, chatId) {
     });
     
     if (!hasReports) {
-      response = '❌ You have not reported any items yet.\n\nUse the main menu to report a lost or found item.';
+      response = '❌ You have not reported any items yet.\n\nUse the menu to report a lost or found item.';
     } else if (reportButtons.length > 0) {
       // Add action buttons for each report
       const keyboard = [
         ...reportButtons,
         [
-          { text: '🔍 Main Menu', callback_data: 'menu' }
+          { text: '🔙 Menu', callback_data: 'menu' }
         ]
       ];
       await sendTelegramMessage(chatId, response, keyboard);
@@ -257,7 +257,7 @@ async function showUserReports(from, chatId) {
     
     const keyboard = [
       [
-        { text: '🔍 Main Menu', callback_data: 'menu' }
+        { text: '🔙 Menu', callback_data: 'menu' }
       ]
     ];
     
@@ -343,57 +343,62 @@ async function handleTelegramResponse(from, msg, chatId) {
         return;
       }
       
-      const reportRef = ref(db, `reports/${user.reportId}`);
-      const reportSnapshot = await get(reportRef);
-      const report = reportSnapshot.val();
-      
-      if (!report) {
-        await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.');
-        return;
+      try {
+        const reportRef = ref(db, `reports/${user.reportId}`);
+        const reportSnapshot = await get(reportRef);
+        const report = reportSnapshot.val();
+        
+        if (!report) {
+          await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.');
+          return;
+        }
+        
+        if (report.verification_code !== verificationCode) {
+          await sendTelegramMessage(chatId, '❌ Incorrect verification code. Please try again or contact the developer if you forgot your code.');
+          return;
+        }
+        
+        // Update the report status
+        const updateData = {};
+        if (user.statusType === 'claimed') {
+          updateData.claimed = true;
+          updateData.claimed_at = new Date().toISOString();
+        } else {
+          updateData.recovered = true;
+          updateData.recovered_at = new Date().toISOString();
+        }
+        
+        await update(reportRef, updateData);
+        
+        // Send confirmation
+        const successMessage = `✅ *Item Successfully Marked as ${user.statusType === 'claimed' ? 'Claimed' : 'Recovered'}!*\n\n`;
+        successMessage += `📦 *Item:* ${report.item}\n`;
+        successMessage += `📍 *Location:* ${report.location}\n\n`;
+        
+        if (user.statusType === 'claimed') {
+          successMessage += `🎉 Thank you for returning the item to its rightful owner! This helps keep our community safe and trustworthy.\n\n`;
+          successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
+        } else {
+          successMessage += `🎉 We're glad you found your item! This helps us know that the system is working.\n\n`;
+          successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
+        }
+        
+        successMessage += `🙏 *Thank you for using this platform ❤️*`;
+        
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        
+        await sendTelegramMessage(chatId, successMessage, keyboard);
+        
+        // Clear user state
+        await remove(ref(db, `users/${from}`));
+      } catch (error) {
+        console.error('Error updating report status:', error);
+        await sendTelegramMessage(chatId, '❌ An error occurred while updating the item status. Please try again.');
       }
-      
-      if (report.verification_code !== verificationCode) {
-        await sendTelegramMessage(chatId, '❌ Incorrect verification code. Please try again or contact the developer if you forgot your code.');
-        return;
-      }
-      
-      // Update the report status
-      const updateData = {};
-      if (user.statusType === 'claimed') {
-        updateData.claimed = true;
-        updateData.claimed_at = new Date().toISOString();
-      } else {
-        updateData.recovered = true;
-        updateData.recovered_at = new Date().toISOString();
-      }
-      
-      await update(reportRef, updateData);
-      
-      // Send confirmation
-      const successMessage = `✅ *Item Successfully Marked as ${user.statusType === 'claimed' ? 'Claimed' : 'Recovered'}!*\n\n`;
-      successMessage += `📦 *Item:* ${report.item}\n`;
-      successMessage += `📍 *Location:* ${report.location}\n\n`;
-      
-      if (user.statusType === 'claimed') {
-        successMessage += `🎉 Thank you for returning the item to its rightful owner! This helps keep our community safe and trustworthy.\n\n`;
-        successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
-      } else {
-        successMessage += `🎉 We're glad you found your item! This helps us know that the system is working.\n\n`;
-        successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
-      }
-      
-      successMessage += `🙏 *Thank you for using KWASU Lost & Found!*`;
-      
-      const keyboard = [
-        [
-          { text: '🔍 Main Menu', callback_data: 'menu' }
-        ]
-      ];
-      
-      await sendTelegramMessage(chatId, successMessage, keyboard);
-      
-      // Clear user state
-      await remove(ref(db, `users/${from}`));
     }
     // Handle report submission
     else if (user.action === 'report_lost' || user.action === 'report_found') {
@@ -491,7 +496,7 @@ async function handleTelegramResponse(from, msg, chatId) {
             { text: '📋 View Report Details', callback_data: `view_${reportId}` }
           ],
           [
-            { text: '🔍 Main Menu', callback_data: 'menu' }
+            { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
         
@@ -532,7 +537,7 @@ async function handleTelegramResponse(from, msg, chatId) {
             { text: '📋 View Report Details', callback_data: `view_${reportId}` }
           ],
           [
-            { text: '🔍 Main Menu', callback_data: 'menu' }
+            { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
         
@@ -605,7 +610,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       const keyboard = [
         ...itemButtons,
         [
-          { text: '🔍 Main Menu', callback_data: 'menu' }
+          { text: '🔙 Menu', callback_data: 'menu' }
         ]
       ];
       
