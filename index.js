@@ -84,7 +84,24 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const from = callbackQuery.from.id.toString();
       
       // Handle callback queries
-      if (data === 'report_lost') {
+      if (data === 'menu') {
+        const keyboard = [
+          [
+            { text: '🔍 Report Lost Item', callback_data: 'report_lost' },
+            { text: '🎁 Report Found Item', callback_data: 'report_found' }
+          ],
+          [
+            { text: '🔎 Search for Items', callback_data: 'search' },
+            { text: '📞 Contact Developer', callback_data: 'contact' }
+          ],
+          [
+            { text: '📋 My Reports', callback_data: 'my_reports' }
+          ]
+        ];
+        
+        await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
+      }
+      else if (data === 'report_lost') {
         await sendTelegramMessage(chatId, '🔍 *Report Lost Item*\n\nPlease provide the following details:\nITEM, LOCATION, DESCRIPTION\n\nExample: "Water Bottle, Library, Blue with sticker"');
         await set(ref(db, `users/${from}`), { action: 'report_lost' });
       }
@@ -135,12 +152,22 @@ async function showReportDetails(from, chatId, reportId) {
     const report = reportSnapshot.val();
     
     if (!report) {
-      await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.');
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.', keyboard);
       return;
     }
     
     if (report.reporter !== from) {
-      await sendTelegramMessage(chatId, '❌ You are not authorized to view this report.');
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, '❌ You are not authorized to view this report.', keyboard);
       return;
     }
     
@@ -159,7 +186,7 @@ async function showReportDetails(from, chatId, reportId) {
             { text: '✅ Mark as Recovered', callback_data: `mark_recovered_${reportId}` }
           ],
           [
-            { text: '🔙 Back to My Reports', callback_data: 'my_reports' }
+            { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
         await sendTelegramMessage(chatId, message, keyboard);
@@ -176,7 +203,7 @@ async function showReportDetails(from, chatId, reportId) {
             { text: '✅ Mark as Claimed', callback_data: `mark_claimed_${reportId}` }
           ],
           [
-            { text: '🔙 Back to My Reports', callback_data: 'my_reports' }
+            { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
         await sendTelegramMessage(chatId, message, keyboard);
@@ -186,14 +213,19 @@ async function showReportDetails(from, chatId, reportId) {
     
     const keyboard = [
       [
-        { text: '🔙 Back to My Reports', callback_data: 'my_reports' }
+        { text: '🔙 Menu', callback_data: 'menu' }
       ]
     ];
     
     await sendTelegramMessage(chatId, message, keyboard);
   } catch (error) {
     console.error('Show report details error:', error);
-    await sendTelegramMessage(chatId, '❌ An error occurred while fetching report details. Please try again.');
+    const keyboard = [
+      [
+        { text: '🔙 Menu', callback_data: 'menu' }
+      ]
+    ];
+    await sendTelegramMessage(chatId, '❌ An error occurred while fetching report details. Please try again.', keyboard);
   }
 }
 
@@ -204,7 +236,12 @@ async function showUserReports(from, chatId) {
     const reports = reportsSnapshot.val();
     
     if (!reports || Object.keys(reports).length === 0) {
-      await sendTelegramMessage(chatId, '❌ You have not reported any items yet.\n\nUse the menu to report a lost or found item.');
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, '❌ You have not reported any items yet.\n\nUse the menu to report a lost or found item.', keyboard);
       return;
     }
     
@@ -264,7 +301,12 @@ async function showUserReports(from, chatId) {
     await sendTelegramMessage(chatId, response, keyboard);
   } catch (error) {
     console.error('Show user reports error:', error);
-    await sendTelegramMessage(chatId, '❌ An error occurred while fetching your reports. Please try again.');
+    const keyboard = [
+      [
+        { text: '🔙 Menu', callback_data: 'menu' }
+      ]
+    ];
+    await sendTelegramMessage(chatId, '❌ An error occurred while fetching your reports. Please try again.', keyboard);
   }
 }
 
@@ -275,12 +317,22 @@ async function showClaimVerification(from, chatId, reportId, statusType) {
     const report = reportSnapshot.val();
     
     if (!report) {
-      await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.');
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.', keyboard);
       return;
     }
     
     if (report.reporter !== from) {
-      await sendTelegramMessage(chatId, '❌ You are not authorized to modify this report.');
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, '❌ You are not authorized to modify this report.', keyboard);
       return;
     }
     
@@ -304,10 +356,20 @@ async function showClaimVerification(from, chatId, reportId, statusType) {
       statusType: statusType
     });
     
-    await sendTelegramMessage(chatId, message);
+    const keyboard = [
+      [
+        { text: '🔙 Menu', callback_data: 'menu' }
+      ]
+    ];
+    await sendTelegramMessage(chatId, message, keyboard);
   } catch (error) {
     console.error('Show claim verification error:', error);
-    await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.');
+    const keyboard = [
+      [
+        { text: '🔙 Menu', callback_data: 'menu' }
+      ]
+    ];
+    await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.', keyboard);
   }
 }
 
@@ -339,7 +401,12 @@ async function handleTelegramResponse(from, msg, chatId) {
       const verificationCode = msg.trim().toUpperCase();
       
       if (verificationCode.length !== 6) {
-        await sendTelegramMessage(chatId, '❌ Invalid verification code format. Please enter the 6-character code provided when you reported the item.');
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, '❌ Invalid verification code format. Please enter the 6-character code provided when you reported the item.', keyboard);
         return;
       }
       
@@ -349,12 +416,22 @@ async function handleTelegramResponse(from, msg, chatId) {
         const report = reportSnapshot.val();
         
         if (!report) {
-          await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.');
+          const keyboard = [
+            [
+              { text: '🔙 Menu', callback_data: 'menu' }
+            ]
+          ];
+          await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.', keyboard);
           return;
         }
         
         if (report.verification_code !== verificationCode) {
-          await sendTelegramMessage(chatId, '❌ Incorrect verification code. Please try again or contact the developer if you forgot your code.');
+          const keyboard = [
+            [
+              { text: '🔙 Menu', callback_data: 'menu' }
+            ]
+          ];
+          await sendTelegramMessage(chatId, '❌ Incorrect verification code. Please try again or contact the developer if you forgot your code.', keyboard);
           return;
         }
         
@@ -397,14 +474,24 @@ async function handleTelegramResponse(from, msg, chatId) {
         await remove(ref(db, `users/${from}`));
       } catch (error) {
         console.error('Error updating report status:', error);
-        await sendTelegramMessage(chatId, '❌ An error occurred while updating the item status. Please try again.');
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, '❌ An error occurred while updating the item status. Please try again.', keyboard);
       }
     }
     // Handle report submission
     else if (user.action === 'report_lost' || user.action === 'report_found') {
       const parts = msg.split(',');
       if (parts.length < 3) {
-        await sendTelegramMessage(chatId, `⚠️ Format error. Please use: ${user.action === 'report_lost' ? 'ITEM, LOCATION, DESCRIPTION' : 'ITEM, LOCATION, YOUR_PHONE_NUMBER'}`);
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, `⚠️ Format error. Please use: ${user.action === 'report_lost' ? 'ITEM, LOCATION, DESCRIPTION' : 'ITEM, LOCATION, YOUR_PHONE_NUMBER'}`, keyboard);
         return;
       }
       
@@ -556,7 +643,12 @@ async function handleTelegramResponse(from, msg, chatId) {
       const reports = reportsSnapshot.val();
       
       if (!reports || Object.keys(reports).length === 0) {
-        await sendTelegramMessage(chatId, '❌ No items found in the database.\n\n💡 *New items are reported regularly. Please check back again soon!*');
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, '❌ No items found in the database.\n\n💡 *New items are reported regularly. Please check back again soon!*', keyboard);
         return;
       }
 
@@ -619,7 +711,12 @@ async function handleTelegramResponse(from, msg, chatId) {
     }
   } catch (error) {
     console.error('Handle response error:', error);
-    await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.');
+    const keyboard = [
+      [
+        { text: '🔙 Menu', callback_data: 'menu' }
+      ]
+    ];
+    await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.', keyboard);
   }
 }
 
