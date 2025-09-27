@@ -52,11 +52,11 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     if (update.message) {
       const message = update.message;
       const chatId = message.chat.id;
-      const text = message.text.toLowerCase();
+      const text = message.text;
       const from = message.from.id.toString();
 
       // Handle commands
-      if (text === '/start' || text === 'menu') {
+      if (text === '/start' || text.toLowerCase() === 'menu') {
         const keyboard = [
           [
             { text: '🔍 Report Lost Item', callback_data: 'report_lost' },
@@ -102,6 +102,10 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       else if (data === 'my_reports') {
         await showUserReports(from, chatId);
       }
+      else if (data.startsWith('view_')) {
+        const reportId = data.replace('view_', '');
+        await showReportDetails(from, chatId, reportId);
+      }
       else if (data.startsWith('mark_claimed_')) {
         const reportId = data.replace('mark_claimed_', '');
         await showClaimVerification(from, chatId, reportId, 'claimed');
@@ -124,6 +128,75 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   }
 });
 
+async function showReportDetails(from, chatId, reportId) {
+  try {
+    const reportRef = ref(db, `reports/${reportId}`);
+    const reportSnapshot = await get(reportRef);
+    const report = reportSnapshot.val();
+    
+    if (!report) {
+      await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.');
+      return;
+    }
+    
+    if (report.reporter !== from) {
+      await sendTelegramMessage(chatId, '❌ You are not authorized to view this report.');
+      return;
+    }
+    
+    let message = `📋 *Report Details*\n\n`;
+    message += `📦 *Item:* ${report.item}\n`;
+    message += `📍 *Location:* ${report.location}\n`;
+    message += `🔐 *Verification Code:* ${report.verification_code}\n`;
+    
+    if (report.type === 'lost') {
+      message += `📝 *Description:* ${report.description}\n`;
+      message += `📊 *Status:* ${report.recovered ? '✅ Recovered' : '❌ Not Recovered'}\n`;
+      
+      if (!report.recovered) {
+        const keyboard = [
+          [
+            { text: '✅ Mark as Recovered', callback_data: `mark_recovered_${reportId}` }
+          ],
+          [
+            { text: '🔙 Back to My Reports', callback_data: 'my_reports' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, message, keyboard);
+        return;
+      }
+    } else {
+      message += `📞 *Contact:* ${report.contact_phone}\n`;
+      message += `📝 *Description:* ${report.description}\n`;
+      message += `📊 *Status:* ${report.claimed ? '✅ Claimed' : '❌ Not Claimed'}\n`;
+      
+      if (!report.claimed) {
+        const keyboard = [
+          [
+            { text: '✅ Mark as Claimed', callback_data: `mark_claimed_${reportId}` }
+          ],
+          [
+            { text: '🔙 Back to My Reports', callback_data: 'my_reports' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, message, keyboard);
+        return;
+      }
+    }
+    
+    const keyboard = [
+      [
+        { text: '🔙 Back to My Reports', callback_data: 'my_reports' }
+      ]
+    ];
+    
+    await sendTelegramMessage(chatId, message, keyboard);
+  } catch (error) {
+    console.error('Show report details error:', error);
+    await sendTelegramMessage(chatId, '❌ An error occurred while fetching report details. Please try again.');
+  }
+}
+
 async function showUserReports(from, chatId) {
   try {
     const reportsRef = ref(db, 'reports');
@@ -137,6 +210,7 @@ async function showUserReports(from, chatId) {
     
     let response = `📋 *Your Reports*\n\n`;
     let hasReports = false;
+    let reportButtons = [];
     
     Object.entries(reports).forEach(([key, report]) => {
       if (report.reporter === from) {
@@ -147,38 +221,47 @@ async function showUserReports(from, chatId) {
           const status = report.recovered ? '✅ Recovered' : '❌ Not Recovered';
           response += `🔍 *Lost Item: ${report.item}*\n`;
           response += `📍 Location: ${report.location}\n`;
-          response += `📝 Description: ${report.description}\n`;
           response += `📅 Reported: ${date}\n`;
-          response += `📊 Status: ${status}\n`;
+          response += `📊 Status: ${status}\n\n`;
           
           if (!report.recovered) {
-            response += `🔗 [View Details](t.me/KwasuLostFound_Bot?start=view_${key})\n`;
+            reportButtons.push([{ text: `🔍 ${report.item}`, callback_data: `view_${key}` }]);
           }
-          
-          response += `\n`;
         } else {
           const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
           response += `🎁 *Found Item: ${report.item}*\n`;
           response += `📍 Location: ${report.location}\n`;
-          response += `📞 Contact: ${report.contact_phone}\n`;
-          response += `📝 Description: ${report.description}\n`;
           response += `📅 Reported: ${date}\n`;
-          response += `📊 Status: ${status}\n`;
+          response += `📊 Status: ${status}\n\n`;
           
           if (!report.claimed) {
-            response += `🔗 [View Details](t.me/KwasuLostFound_Bot?start=view_${key})\n`;
+            reportButtons.push([{ text: `🎁 ${report.item}`, callback_data: `view_${key}` }]);
           }
-          
-          response += `\n`;
         }
       }
     });
     
     if (!hasReports) {
       response = '❌ You have not reported any items yet.\n\nUse the main menu to report a lost or found item.';
+    } else if (reportButtons.length > 0) {
+      // Add action buttons for each report
+      const keyboard = [
+        ...reportButtons,
+        [
+          { text: '🔍 Main Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, response, keyboard);
+      return;
     }
     
-    await sendTelegramMessage(chatId, response);
+    const keyboard = [
+      [
+        { text: '🔍 Main Menu', callback_data: 'menu' }
+      ]
+    ];
+    
+    await sendTelegramMessage(chatId, response, keyboard);
   } catch (error) {
     console.error('Show user reports error:', error);
     await sendTelegramMessage(chatId, '❌ An error occurred while fetching your reports. Please try again.');
@@ -301,7 +384,13 @@ async function handleTelegramResponse(from, msg, chatId) {
       
       successMessage += `🙏 *Thank you for using KWASU Lost & Found!*`;
       
-      await sendTelegramMessage(chatId, successMessage);
+      const keyboard = [
+        [
+          { text: '🔍 Main Menu', callback_data: 'menu' }
+        ]
+      ];
+      
+      await sendTelegramMessage(chatId, successMessage, keyboard);
       
       // Clear user state
       await remove(ref(db, `users/${from}`));
@@ -345,9 +434,19 @@ async function handleTelegramResponse(from, msg, chatId) {
       await set(newReportRef, reportData);
       
       // Get the ID of the newly created report
-      const newReportSnapshot = await get(newReportRef);
-      const newReport = newReportSnapshot.val();
-      const reportId = Object.keys(reportsSnapshot.val()).find(key => reportsSnapshot.val()[key] === newReport);
+      const reportsSnapshot = await get(reportsRef);
+      const reports = reportsSnapshot.val();
+      let reportId = null;
+      
+      for (const key in reports) {
+        if (reports[key].verification_code === verificationCode && 
+            reports[key].item === item && 
+            reports[key].location === location && 
+            reports[key].timestamp === reportData.timestamp) {
+          reportId = key;
+          break;
+        }
+      }
 
       // Send confirmation
       if (user.action === 'report_lost') {
@@ -459,6 +558,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       let response = `🔎 *Search Results for "${msg}"*\n\n`;
       let foundLost = false;
       let foundFound = false;
+      let itemButtons = [];
       
       // Separate lost and found items
       Object.entries(reports).forEach(([key, report]) => {
@@ -466,48 +566,32 @@ async function handleTelegramResponse(from, msg, chatId) {
         if (searchText.includes(msg.toLowerCase())) {
           if (report.type === 'lost') {
             foundLost = true;
+            const status = report.recovered ? '✅ Recovered' : '❌ Not Recovered';
+            response += `${itemButtons.length + 1}. 🔍 *${report.item}*\n`;
+            response += `   📍 Location: ${report.location}\n`;
+            response += `   📝 ${report.description}\n`;
+            response += `   📊 Status: ${status}\n`;
+            response += `   ⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
+            
+            if (!report.recovered) {
+              itemButtons.push([{ text: `${itemButtons.length + 1}. ${report.item}`, callback_data: `view_${key}` }]);
+            }
           } else {
             foundFound = true;
+            const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
+            response += `${itemButtons.length + 1}. 🎁 *${report.item}*\n`;
+            response += `   📍 Location: ${report.location}\n`;
+            response += `   📝 ${report.description}\n`;
+            response += `   📞 Contact: ${report.contact_phone}\n`;
+            response += `   📊 Status: ${status}\n`;
+            response += `   ⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
+            
+            if (!report.claimed) {
+              itemButtons.push([{ text: `${itemButtons.length + 1}. ${report.item}`, callback_data: `view_${key}` }]);
+            }
           }
         }
       });
-      
-      // Show lost items first
-      if (foundLost) {
-        response += `🔍 *Lost Items Matching Your Search:*\n\n`;
-        Object.entries(reports).forEach(([key, report]) => {
-          if (report.type === 'lost') {
-            const searchText = `${report.item} ${report.location} ${report.description}`.toLowerCase();
-            if (searchText.includes(msg.toLowerCase())) {
-              const status = report.recovered ? '✅ Recovered' : '❌ Not Recovered';
-              response += `📦 *${report.item}*\n`;
-              response += `📍 Location: ${report.location}\n`;
-              response += `📝 ${report.description}\n`;
-              response += `📊 Status: ${status}\n`;
-              response += `⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
-            }
-          }
-        });
-      }
-      
-      // Show found items
-      if (foundFound) {
-        response += `🎁 *Found Items Matching Your Search:*\n\n`;
-        Object.entries(reports).forEach(([key, report]) => {
-          if (report.type === 'found') {
-            const searchText = `${report.item} ${report.location} ${report.description}`.toLowerCase();
-            if (searchText.includes(msg.toLowerCase())) {
-              const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
-              response += `📦 *${report.item}*\n`;
-              response += `📍 Location: ${report.location}\n`;
-              response += `📝 ${report.description}\n`;
-              response += `📞 Contact: ${report.contact_phone}\n`;
-              response += `📊 Status: ${status}\n`;
-              response += `⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
-            }
-          }
-        });
-      }
       
       if (!foundLost && !foundFound) {
         response += `❌ No items found matching "${msg}".\n\n`;
@@ -519,6 +603,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       }
       
       const keyboard = [
+        ...itemButtons,
         [
           { text: '🔍 Main Menu', callback_data: 'menu' }
         ]
