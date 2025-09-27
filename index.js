@@ -410,77 +410,69 @@ async function handleTelegramResponse(from, msg, chatId) {
         return;
       }
       
-      try {
-        const reportRef = ref(db, `reports/${user.reportId}`);
-        const reportSnapshot = await get(reportRef);
-        const report = reportSnapshot.val();
-        
-        if (!report) {
-          const keyboard = [
-            [
-              { text: '🔙 Menu', callback_data: 'menu' }
-            ]
-          ];
-          await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.', keyboard);
-          return;
-        }
-        
-        if (report.verification_code !== verificationCode) {
-          const keyboard = [
-            [
-              { text: '🔙 Menu', callback_data: 'menu' }
-            ]
-          ];
-          await sendTelegramMessage(chatId, '❌ Incorrect verification code. Please try again or contact the developer if you forgot your code.', keyboard);
-          return;
-        }
-        
-        // Update the report status
-        const updateData = {};
-        if (user.statusType === 'claimed') {
-          updateData.claimed = true;
-          updateData.claimed_at = new Date().toISOString();
-        } else {
-          updateData.recovered = true;
-          updateData.recovered_at = new Date().toISOString();
-        }
-        
-        await update(reportRef, updateData);
-        
-        // Send confirmation
-        const successMessage = `✅ *Item Successfully Marked as ${user.statusType === 'claimed' ? 'Claimed' : 'Recovered'}!*\n\n`;
-        successMessage += `📦 *Item:* ${report.item}\n`;
-        successMessage += `📍 *Location:* ${report.location}\n\n`;
-        
-        if (user.statusType === 'claimed') {
-          successMessage += `🎉 Thank you for returning the item to its rightful owner! This helps keep our community safe and trustworthy.\n\n`;
-          successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
-        } else {
-          successMessage += `🎉 We're glad you found your item! This helps us know that the system is working.\n\n`;
-          successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
-        }
-        
-        successMessage += `🙏 *Thank you for using this platform ❤️*`;
-        
+      // Get the report
+      const reportRef = ref(db, `reports/${user.reportId}`);
+      const reportSnapshot = await get(reportRef);
+      const report = reportSnapshot.val();
+      
+      if (!report) {
         const keyboard = [
           [
             { text: '🔙 Menu', callback_data: 'menu' }
           ]
         ];
-        
-        await sendTelegramMessage(chatId, successMessage, keyboard);
-        
-        // Clear user state
-        await remove(ref(db, `users/${from}`));
-      } catch (error) {
-        console.error('Error updating report status:', error);
-        const keyboard = [
-          [
-            { text: '🔙 Menu', callback_data: 'menu' }
-          ]
-        ];
-        await sendTelegramMessage(chatId, '❌ An error occurred while updating the item status. Please try again.', keyboard);
+        await sendTelegramMessage(chatId, '❌ Report not found. It may have been deleted.', keyboard);
+        return;
       }
+      
+      if (report.verification_code !== verificationCode) {
+        const keyboard = [
+          [
+            { text: '🔙 Menu', callback_data: 'menu' }
+          ]
+        ];
+        await sendTelegramMessage(chatId, '❌ Incorrect verification code. Please try again or contact the developer if you forgot your code.', keyboard);
+        return;
+      }
+      
+      // Update the report status
+      const updateData = {};
+      if (user.statusType === 'claimed') {
+        updateData.claimed = true;
+        updateData.claimed_at = new Date().toISOString();
+      } else {
+        updateData.recovered = true;
+        updateData.recovered_at = new Date().toISOString();
+      }
+      
+      // Perform the update
+      await update(reportRef, updateData);
+      
+      // Send confirmation
+      const successMessage = `✅ *Item Successfully Marked as ${user.statusType === 'claimed' ? 'Claimed' : 'Recovered'}!*\n\n`;
+      successMessage += `📦 *Item:* ${report.item}\n`;
+      successMessage += `📍 *Location:* ${report.location}\n\n`;
+      
+      if (user.statusType === 'claimed') {
+        successMessage += `🎉 Thank you for returning the item to its rightful owner! This helps keep our community safe and trustworthy.\n\n`;
+        successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
+      } else {
+        successMessage += `🎉 We're glad you found your item! This helps us know that the system is working.\n\n`;
+        successMessage += `📝 *Note:* The item will be automatically removed from search results after 2 days to keep the database clean.\n\n`;
+      }
+      
+      successMessage += `🙏 *Thank you for using this platform ❤️*`;
+      
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      
+      await sendTelegramMessage(chatId, successMessage, keyboard);
+      
+      // Clear user state
+      await remove(ref(db, `users/${from}`));
     }
     // Handle report submission
     else if (user.action === 'report_lost' || user.action === 'report_found') {
