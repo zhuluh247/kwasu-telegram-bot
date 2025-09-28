@@ -283,6 +283,9 @@ async function handleFoundItemImage(from, chatId, photo) {
       ]
     ];
     await sendTelegramMessage(chatId, '❌ An error occurred while processing your image. Please try again.', keyboard);
+    
+    // Clear user state even if there's an error
+    await remove(ref(db, `users/${from}`));
   }
 }
 
@@ -643,6 +646,16 @@ async function handleTelegramResponse(from, msg, chatId) {
       
       // Clear user state
       await remove(ref(db, `users/${from}`));
+    }
+    // Handle case where user sends text while waiting for image
+    else if (user.action === 'awaiting_found_image') {
+      const keyboard = [
+        [
+          { text: '🔙 Menu', callback_data: 'menu' }
+        ]
+      ];
+      await sendTelegramMessage(chatId, '⚠️ Please send an image of the found item. If you want to cancel, use the menu.', keyboard);
+      return;
     }
     // Handle report submission
     else if (user.action === 'report_lost' || user.action === 'report_found') {
