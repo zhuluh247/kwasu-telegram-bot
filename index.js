@@ -73,6 +73,33 @@ async function sendTelegramPhoto(chatId, fileId, caption = null, keyboard = null
   }
 }
 
+// Add proxy endpoint for serving images to the website
+expressApp.get('/image-proxy/:filePath', async (req, res) => {
+  try {
+    const filePath = req.params.filePath;
+    const telegramUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+    
+    // Fetch the image from Telegram
+    const response = await axios.get(telegramUrl, {
+      responseType: 'arraybuffer',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    // Set appropriate headers
+    res.set('Content-Type', response.headers['content-type']);
+    res.set('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+    res.set('Access-Control-Allow-Origin', '*'); // Allow CORS
+    
+    // Send the image
+    res.send(response.data);
+  } catch (error) {
+    console.error('Image proxy error:', error);
+    res.status(404).send('Image not found');
+  }
+});
+
 // Handle Telegram updates
 expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   try {
@@ -198,9 +225,8 @@ async function handleFoundItemImage(from, chatId, photo) {
     const fileInfo = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
     const filePath = fileInfo.data.result.file_path;
     
-    // Create a public URL for the website (this will work with your existing website code)
-    // Note: This URL includes the bot token, but it's the simplest solution without editing website code
-    const publicImageUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+    // Create a proxy URL for the website (this will work with your existing website code)
+    const proxyImageUrl = `https://kwasu-telegram-bot.onrender.com/image-proxy/${filePath}`;
     
     // Get user data
     const userRef = ref(db, `users/${from}`);
@@ -216,7 +242,7 @@ async function handleFoundItemImage(from, chatId, photo) {
     // Generate verification code
     const verificationCode = generateVerificationCode();
     
-    // Create report data with both Telegram file ID and public URL
+    // Create report data with both Telegram file ID and proxy URL
     const reportData = {
       type: 'found',
       item: userData.foundItemData.item,
@@ -224,7 +250,7 @@ async function handleFoundItemImage(from, chatId, photo) {
       contact_phone: userData.foundItemData.contact_phone,
       description: userData.foundItemData.description || 'No description',
       image_file_id: fileId, // For Telegram bot
-      image_url: publicImageUrl, // For website (this is what your website expects)
+      image_url: proxyImageUrl, // For website (this is what your website expects)
       reporter: from,
       verification_code: verificationCode,
       claimed: false,
@@ -476,7 +502,7 @@ async function showClaimVerification(from, chatId, reportId, statusType) {
           { text: '🔙 Menu', callback_data: 'menu' }
         ]
       ];
-      await sendTelegramMessage(chatId, '❌ You are not authorized to modify this report.', keyboard);
+      await sendTelegramMessage(chatId, '❌ You are not authorized to view this report.', keyboard);
       return;
     }
     
