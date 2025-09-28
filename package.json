@@ -1,7 +1,7 @@
 {
   "name": "kwasu-telegram-bot",
   "version": "1.0.0",
-  "description": "KWASU Lost & Found Telegram Bot",
+  "description": "KWASU Lost and Found Telegram Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -15,14 +15,5 @@
   },
   "engines": {
     "node": "18.x"
-  },
-  "keywords": [
-    "telegram",
-    "bot",
-    "lost",
-    "found",
-    "kwasu"
-  ],
-  "author": "Rugged of ICT",
-  "license": "MIT"
+  }
 }
