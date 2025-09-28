@@ -73,6 +73,9 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
           ]
         ];
         
+        // Clear any existing user state when showing menu
+        await remove(ref(db, `users/${from}`));
+        
         await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
       } 
       else {
@@ -100,6 +103,9 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
             { text: '📋 My Reports', callback_data: 'my_reports' }
           ]
         ];
+        
+        // Clear any existing user state when showing menu
+        await remove(ref(db, `users/${from}`));
         
         await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
       }
