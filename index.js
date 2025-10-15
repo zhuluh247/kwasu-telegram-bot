@@ -42,7 +42,41 @@ async function sendTelegramMessage(chatId, text, keyboard = null) {
     return response.data;
   } catch (error) {
     console.error('Send message error:', error.response?.data || error.message);
-    throw error; // Re-throw the error so we can catch it in the calling function
+    throw error;
+  }
+}
+
+// Helper function to download and process image from Telegram
+async function processTelegramImage(fileId) {
+  try {
+    // Get file path from Telegram
+    const fileResponse = await axios.get(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
+    const filePath = fileResponse.data.result.file_path;
+    
+    // Download the image
+    const imageUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+    const imageResponse = await axios.get(imageUrl, {
+      responseType: 'arraybuffer'
+    });
+    
+    // Convert to base64
+    const base64Image = Buffer.from(imageResponse.data).toString('base64');
+    
+    // Determine content type from file extension
+    let contentType = 'image/jpeg'; // Default
+    if (filePath.endsWith('.png')) {
+      contentType = 'image/png';
+    } else if (filePath.endsWith('.gif')) {
+      contentType = 'image/gif';
+    } else if (filePath.endsWith('.webp')) {
+      contentType = 'image/webp';
+    }
+    
+    // Return data URI format compatible with the website
+    return `data:${contentType};base64,${base64Image}`;
+  } catch (error) {
+    console.error('Error processing Telegram image:', error);
+    throw error;
   }
 }
 
@@ -56,7 +90,13 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const chatId = message.chat.id;
       const text = message.text;
       const from = message.from.id.toString();
-
+      
+      // Handle photo messages
+      if (message.photo) {
+        await handlePhotoMessage(from, chatId, message.photo);
+        return res.sendStatus(200);
+      }
+      
       // Handle commands
       if (text === '/start' || text.toLowerCase() === 'menu') {
         const keyboard = [
@@ -76,7 +116,7 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         // Clear any existing user state when showing menu
         await remove(ref(db, `users/${from}`));
         
-        await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
+        await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 with Image Support - Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
       } 
       else {
         await handleTelegramResponse(from, text, chatId);
@@ -107,18 +147,24 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         // Clear any existing user state when showing menu
         await remove(ref(db, `users/${from}`));
         
-        await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
+        await sendTelegramMessage(chatId, `📋 *Welcome to Kwasu Lost And Found Bot!*\n_v0.2 with Image Support - Designed & Developed by_ Rugged of ICT.\n\nTo proceed with, Select what you are here for from the menu:`, keyboard);
       }
       else if (data === 'report_lost') {
-        await sendTelegramMessage(chatId, '🔍 *Report Lost Item*\n\nPlease provide the following details:\nITEM, LOCATION, DESCRIPTION\n\nExample: "Water Bottle, Library, Blue with sticker"');
-        await set(ref(db, `users/${from}`), { action: 'report_lost' });
+        await sendTelegramMessage(chatId, '🔍 *Report Lost Item*\n\nPlease provide the following details:\nITEM, LOCATION, DESCRIPTION\n\nExample: "Water Bottle, Library, Blue with sticker"\n\n💡 *Optional:* You can also send an image of the item after submitting details.');
+        await set(ref(db, `users/${from}`), { 
+          action: 'report_lost',
+          step: 'awaiting_details'
+        });
       }
       else if (data === 'report_found') {
-        await sendTelegramMessage(chatId, '🎁 *Report Found Item*\n\nPlease provide the following details:\nITEM, LOCATION, YOUR_PHONE_NUMBER\n\n⚠️ *Important:* The phone number should be YOUR phone number (the person who found the item) so the owner can contact you.\n\nExample: "Keys, Cafeteria, 08012345678"');
-        await set(ref(db, `users/${from}`), { action: 'report_found' });
+        await sendTelegramMessage(chatId, '🎁 *Report Found Item*\n\n📷 *Step 1:* Please send an image of the found item.\n\nAfter the image is received, you will be asked for the details.');
+        await set(ref(db, `users/${from}`), { 
+          action: 'report_found',
+          step: 'awaiting_image'
+        });
       }
       else if (data === 'search') {
-        await sendTelegramMessage(chatId, '🔎 *Search for my lost Item*\n\nPlease reply with a keyword to search:\n\nExample: "water", "keys", "bag"\n\n💡 *Tip: Keep checking back regularly as new items are reported all the time!*');
+        await sendTelegramMessage(chatId, '🔎 *Search for my lost Item*\n\nPlease reply with a keyword to search:\n\nExample: "water", "keys", "bag"\n\n💡 *Tip:* Items with images are marked with 📷');
         await set(ref(db, `users/${from}`), { action: 'search' });
       }
       else if (data === 'contact') {
@@ -152,6 +198,44 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// Handle photo messages
+async function handlePhotoMessage(from, chatId, photo) {
+  try {
+    // Get user state
+    const userSnapshot = await get(child(ref(db, `users/${from}`)));
+    const user = userSnapshot.val();
+    
+    if (!user || user.action !== 'report_found' || user.step !== 'awaiting_image') {
+      await sendTelegramMessage(chatId, '❌ Please start by selecting "Report Found Item" from the menu. Images are only required for found items.');
+      return;
+    }
+    
+    // Get the highest resolution photo (last in array)
+    const photoFile = photo[photo.length - 1];
+    const fileId = photoFile.file_id;
+    
+    try {
+      // Process the image
+      const imageUrl = await processTelegramImage(fileId);
+      
+      // Update user state with the image
+      await set(ref(db, `users/${from}`), {
+        action: 'report_found',
+        step: 'awaiting_details',
+        image_url: imageUrl
+      });
+      
+      await sendTelegramMessage(chatId, '✅ Image received! Now, please provide the item details in this format:\n\nITEM, LOCATION, YOUR_PHONE_NUMBER\n\nExample: "Keys, Cafeteria, 08012345678"');
+    } catch (error) {
+      console.error('Error processing image:', error);
+      await sendTelegramMessage(chatId, '❌ Error processing image. Please try again.');
+    }
+  } catch (error) {
+    console.error('Handle photo message error:', error);
+    await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.');
+  }
+}
 
 async function showReportDetails(from, chatId, reportId) {
   try {
@@ -204,6 +288,10 @@ async function showReportDetails(from, chatId, reportId) {
       message += `📞 *Contact:* ${report.contact_phone}\n`;
       message += `📝 *Description:* ${report.description}\n`;
       message += `📊 *Status:* ${report.claimed ? '✅ Claimed' : '❌ Not Claimed'}\n`;
+      
+      if (report.image_url) {
+        message += `📷 *Image:* Attached\n`;
+      }
       
       if (!report.claimed) {
         const keyboard = [
@@ -274,8 +362,11 @@ async function showUserReports(from, chatId) {
           }
         } else {
           const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
-          response += `🎁 *Found Item: ${report.item}*\n`;
-          response += `📍 Location: ${report.location}\n`;
+          response += `🎁 *Found Item: ${report.item}*`;
+          if (report.image_url) {
+            response += ` 📷`;
+          }
+          response += `\n📍 Location: ${report.location}\n`;
           response += `📅 Reported: ${date}\n`;
           response += `📊 Status: ${status}\n\n`;
           
@@ -484,6 +575,23 @@ async function handleTelegramResponse(from, msg, chatId) {
     }
     // Handle report submission
     else if (user.action === 'report_lost' || user.action === 'report_found') {
+      // Check if user is trying to send text before an image for found items
+      if (user.action === 'report_found' && user.step === 'awaiting_image') {
+        await sendTelegramMessage(chatId, '⚠️ An image is required for found items. Please send an image of the item first.');
+        return;
+      }
+
+      // User is sending details after the image (for found items) or directly (for lost items)
+      if (user.action === 'report_found' && user.step === 'awaiting_details') {
+        // IMPORTANT: Check if the image was actually saved
+        if (!user.image_url) {
+          console.error(`Image data missing for user ${from} during found item report.`);
+          await sendTelegramMessage(chatId, '❌ An error occurred. The image was not saved correctly. Please start over by selecting "Report Found Item" from the menu.');
+          await remove(ref(db, `users/${from}`)); // Reset user state
+          return;
+        }
+      }
+
       const parts = msg.split(',');
       if (parts.length < 3) {
         const keyboard = [
@@ -510,6 +618,11 @@ async function handleTelegramResponse(from, msg, chatId) {
         verification_code: verificationCode,
         timestamp: new Date().toISOString()
       };
+      
+      // Add the image if it was uploaded (from the 'image_url' field)
+      if (user.image_url) {
+        reportData.image_url = user.image_url;
+      }
       
       if (user.action === 'report_lost') {
         reportData.description = parts.slice(2).join(',').trim();
@@ -554,7 +667,11 @@ async function handleTelegramResponse(from, msg, chatId) {
         await sendTelegramMessage(chatId, confirmationMsg, keyboard);
       } else {
         // Confirmation with safety warning for found items
-        let confirmationMsg = `✅ Found Item Reported Successfully!\n\nItem: ${item}\nLocation: ${location}\nYour Phone: ${reportData.contact_phone}\nVerification Code: ${verificationCode}\n\nSave this code - you'll need it to mark the item as claimed.`;
+        let confirmationMsg = `✅ Found Item Reported Successfully!\n\nItem: ${item}\nLocation: ${location}\nYour Phone: ${reportData.contact_phone}\nDescription: ${reportData.description}\nVerification Code: ${verificationCode}\n\nSave this code - you'll need it to mark the item as claimed.`;
+        
+        if (reportData.image_url) {
+          confirmationMsg += `\n\n📷 Image: Attached`;
+        }
         
         const keyboard = [
           [
@@ -607,8 +724,11 @@ async function handleTelegramResponse(from, msg, chatId) {
           } else {
             foundFound = true;
             const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
-            response += `${itemButtons.length + 1}. 🎁 ${report.item}\n`;
-            response += `Location: ${report.location}\n`;
+            response += `${itemButtons.length + 1}. 🎁 ${report.item}`;
+            if (report.image_url) {
+              response += ` 📷`;
+            }
+            response += `\nLocation: ${report.location}\n`;
             response += `Contact: ${report.contact_phone}\n`;
             response += `Status: ${status}\n\n`;
             
@@ -662,6 +782,11 @@ async function findMatchingFoundItems(searchItem) {
         const matchScore = searchKeywords.reduce((score, keyword) => {
           return score + (reportText.includes(keyword) ? 1 : 0);
         }, 0);
+        
+        // Bonus points for having an image
+        if (report.image_url) {
+          matchScore += 2;
+        }
         
         if (matchScore > 0) {
           matchingItems.push({...report, matchScore});
