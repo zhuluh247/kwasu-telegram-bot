@@ -90,14 +90,10 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const chatId = message.chat.id;
       const text = message.text;
       
-      // Add comprehensive logging for debugging
-      console.log('Received message:', JSON.stringify(message, null, 2));
-      
-      // Add safety check for user ID with more detailed logging
+      // Add safety check for user ID
       let from;
       if (message.from && message.from.id) {
         from = message.from.id.toString();
-        console.log('User ID extracted:', from);
       } else {
         console.error('User ID is missing in the message:', JSON.stringify(message));
         try {
@@ -110,7 +106,6 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       
       // Handle photo messages
       if (message.photo) {
-        console.log('Handling photo message for user:', from);
         await handlePhotoMessage(from, chatId, message.photo);
         return res.sendStatus(200);
       }
@@ -145,11 +140,10 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const chatId = callbackQuery.message.chat.id;
       const data = callbackQuery.data;
       
-      // Add safety check for user ID with more detailed logging
+      // Add safety check for user ID
       let from;
       if (callbackQuery.from && callbackQuery.from.id) {
         from = callbackQuery.from.id.toString();
-        console.log('User ID extracted from callback:', from);
       } else {
         console.error('User ID is missing in the callback query:', JSON.stringify(callbackQuery));
         try {
@@ -234,9 +228,6 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 // Handle photo messages
 async function handlePhotoMessage(from, chatId, photo) {
   try {
-    // Add comprehensive logging for debugging
-    console.log('handlePhotoMessage called with from:', from, 'chatId:', chatId);
-    
     // Add safety check for user ID
     if (!from || from === 'undefined' || from === null) {
       console.error('Invalid user ID in handlePhotoMessage:', from);
@@ -248,14 +239,19 @@ async function handlePhotoMessage(from, chatId, photo) {
       return;
     }
     
-    console.log('Getting user state for:', from);
+    // Create a local variable to store the user ID
+    const userId = from;
+    console.log('Using userId:', userId);
     
-    // Get user state
-    const userSnapshot = await get(child(ref(db, `users/${from}`)));
+    // Get user state using ref instead of child
+    const userRef = ref(db, `users/${userId}`);
+    console.log('Created userRef with path:', `users/${userId}`);
+    
+    const userSnapshot = await get(userRef);
     const user = userSnapshot.val();
     
     if (!user) {
-      console.error('User state not found for:', from);
+      console.error('User state not found for:', userId);
       await sendTelegramMessage(chatId, '❌ Please start by selecting "Report Found Item" from the menu. Images are only required for found items.');
       return;
     }
@@ -275,7 +271,7 @@ async function handlePhotoMessage(from, chatId, photo) {
       const imageUrl = await processTelegramImage(fileId);
       
       // Update user state with the image
-      await set(ref(db, `users/${from}`), {
+      await set(ref(db, `users/${userId}`), {
         action: 'report_found',
         step: 'awaiting_details',
         image_url: imageUrl
@@ -544,8 +540,11 @@ async function handleTelegramResponse(from, msg, chatId) {
       return;
     }
     
+    // Create a local variable to store the user ID
+    const userId = from;
+    
     // Get user state
-    const userRef = ref(db, `users/${from}`);
+    const userRef = ref(db, `users/${userId}`);
     const userSnapshot = await get(userRef);
     const user = userSnapshot.val();
     
@@ -641,7 +640,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       }
       
       // Clear user state
-      await remove(ref(db, `users/${from}`));
+      await remove(ref(db, `users/${userId}`));
     }
     // Handle report submission
     else if (user.action === 'report_lost' || user.action === 'report_found') {
@@ -655,9 +654,9 @@ async function handleTelegramResponse(from, msg, chatId) {
       if (user.action === 'report_found' && user.step === 'awaiting_details') {
         // IMPORTANT: Check if the image was actually saved
         if (!user.image_url) {
-          console.error(`Image data missing for user ${from} during found item report.`);
+          console.error(`Image data missing for user ${userId} during found item report.`);
           await sendTelegramMessage(chatId, '❌ An error occurred. The image was not saved correctly. Please start over by selecting "Report Found Item" from the menu.');
-          await remove(ref(db, `users/${from}`)); // Reset user state
+          await remove(ref(db, `users/${userId}`)); // Reset user state
           return;
         }
       }
@@ -684,7 +683,7 @@ async function handleTelegramResponse(from, msg, chatId) {
         type: user.action.replace('report_', ''),
         item,
         location,
-        reporter: from,
+        reporter: userId,
         verification_code: verificationCode,
         timestamp: new Date().toISOString()
       };
@@ -753,7 +752,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       }
       
       // Clear user state
-      await remove(ref(db, `users/${from}`));
+      await remove(ref(db, `users/${userId}`));
     }
     
     // Handle search
@@ -821,7 +820,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       ];
       
       await sendTelegramMessage(chatId, response, keyboard);
-      await remove(ref(db, `users/${from}`));
+      await remove(ref(db, `users/${userId}`));
     }
   } catch (error) {
     console.error('Handle response error:', error);
