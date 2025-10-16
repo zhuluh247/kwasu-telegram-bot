@@ -89,7 +89,16 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const message = update.message;
       const chatId = message.chat.id;
       const text = message.text;
-      const from = message.from.id.toString();
+      
+      // Add safety check for user ID
+      let from;
+      if (message.from && message.from.id) {
+        from = message.from.id.toString();
+      } else {
+        console.error('User ID is missing in the message:', JSON.stringify(message));
+        await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+        return res.sendStatus(200);
+      }
       
       // Handle photo messages
       if (message.photo) {
@@ -126,7 +135,16 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const callbackQuery = update.callback_query;
       const chatId = callbackQuery.message.chat.id;
       const data = callbackQuery.data;
-      const from = callbackQuery.from.id.toString();
+      
+      // Add safety check for user ID
+      let from;
+      if (callbackQuery.from && callbackQuery.from.id) {
+        from = callbackQuery.from.id.toString();
+      } else {
+        console.error('User ID is missing in the callback query:', JSON.stringify(callbackQuery));
+        await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+        return res.sendStatus(200);
+      }
       
       // Handle callback queries
       if (data === 'menu') {
