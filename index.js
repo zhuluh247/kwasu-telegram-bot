@@ -80,6 +80,46 @@ async function processTelegramImage(fileId) {
   }
 }
 
+// UPDATED: Helper function to find exact matching found items (case-insensitive)
+async function findMatchingFoundItems(searchItem) {
+  try {
+    console.log(`[DEBUG] Searching for exact matches of: "${searchItem}"`);
+    
+    const reportsRef = ref(db, 'reports');
+    const reportsSnapshot = await get(reportsRef);
+    const reports = reportsSnapshot.val();
+    
+    if (!reports) {
+      console.log('[DEBUG] No reports found in database');
+      return [];
+    }
+    
+    const searchItemLower = searchItem.toLowerCase().trim();
+    const matchingItems = [];
+    
+    Object.entries(reports).forEach(([key, report]) => {
+      // Only include found items in the search results
+      if (report.type === 'found') {
+        const reportItem = (report.item || '').toLowerCase().trim();
+        
+        console.log(`[DEBUG] Checking found item: "${report.item}" (type: ${report.type})`);
+        
+        // Only match if the item name is exactly the same (case-insensitive)
+        if (reportItem === searchItemLower) {
+          console.log(`[DEBUG] Exact match found: "${report.item}"`);
+          matchingItems.push({...report, id: key});
+        }
+      }
+    });
+    
+    console.log(`[DEBUG] Found ${matchingItems.length} exact matches`);
+    return matchingItems;
+  } catch (error) {
+    console.error('Error finding matching items:', error);
+    return [];
+  }
+}
+
 // Handle Telegram updates
 expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   try {
@@ -190,7 +230,7 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
         });
       }
       else if (data === 'search') {
-        await sendTelegramMessage(chatId, '🔎 *Search for my lost Item*\n\nPlease reply with a keyword to search:\n\nExample: "water", "keys", "bag"\n\n💡 *Tip:* Items with images are marked with 📷');
+        await sendTelegramMessage(chatId, '🔎 *Search for my lost Item*\n\nPlease reply with the exact item name to search:\n\nExample: "book", "keys", "bag"\n\n💡 *Tip:* Items with images are marked with 📷');
         await set(ref(db, `users/${from}`), { action: 'search' });
       }
       else if (data === 'contact') {
@@ -345,7 +385,7 @@ async function showReportDetails(from, chatId, reportId) {
       message += `📊 *Status:* ${report.claimed ? '✅ Claimed' : '❌ Not Claimed'}\n`;
       
       if (report.image_url) {
-        message += `📷 *Image:* Attached\n`;
+        message += `📷 *Image:* (Go to finditkwasu.ng to see the image result) Has image\n`;
       }
       
       if (!report.claimed) {
@@ -724,8 +764,41 @@ async function handleTelegramResponse(from, msg, chatId) {
 
       // Send confirmation
       if (user.action === 'report_lost') {
-        // Enhanced confirmation for lost items
-        let confirmationMsg = `✅ Lost Item Reported Successfully!\n\nItem: ${item}\nLocation: ${location}\nDescription: ${reportData.description}\nVerification Code: ${verificationCode}\n\nSave this code - you'll need it to mark your item as recovered.`;
+        // ENHANCED: Search for matching found items after reporting a lost item
+        console.log(`[DEBUG] Searching for matches for lost item: "${item}"`);
+        const foundItems = await findMatchingFoundItems(item);
+        
+        let confirmationMsg = `✅ *Lost Item Reported Successfully!*\n\n`;
+        confirmationMsg += `📦 *Item:* ${item}\n`;
+        confirmationMsg += `📍 *Location:* ${location}\n`;
+        confirmationMsg += `📝 *Description:* ${reportData.description}\n`;
+        confirmationMsg += `🔐 *Verification Code:* ${verificationCode}\n\n`;
+        confirmationMsg += `🔍 *We're searching for matching found items...*\n\n`;
+        
+        if (foundItems.length > 0) {
+          confirmationMsg += `🎉 *Good news!* We found ${foundItems.length} matching item(s):\n\n`;
+          foundItems.forEach((foundItem, index) => {
+            confirmationMsg += `${index + 1}. *${foundItem.item}*\n`;
+            confirmationMsg += `   📍 Location: ${foundItem.location}\n`;
+            confirmationMsg += `   📞 Contact: ${foundItem.contact_phone}\n`;
+            confirmationMsg += `   📝 ${foundItem.description}\n`;
+            if (foundItem.image_url) {
+              // MODIFIED: Added the requested text in front of "Has image"
+              confirmationMsg += `   📷 (Go to finditkwasu.ng to see the image result) Has image\n`;
+            }
+            confirmationMsg += `   ⏰ ${new Date(foundItem.timestamp).toLocaleString()}\n\n`;
+          });
+          
+          confirmationMsg += `💡 *Tip:* When contacting, please provide details about your lost item to verify ownership.\n\n`;
+        } else {
+          confirmationMsg += `😔 *No matching found items yet.*\n\n`;
+          confirmationMsg += `💡 *What to do next:*\n`;
+          confirmationMsg += `• Check back regularly for updates\n`;
+          confirmationMsg += `• Spread the word about your lost item\n`;
+          confirmationMsg += `• Contact locations where you might have lost it\n\n`;
+        }
+        
+        confirmationMsg += `🙏 *Thank you for using KWASU Lost & Found Bot!*`;
         
         const keyboard = [
           [
@@ -736,11 +809,29 @@ async function handleTelegramResponse(from, msg, chatId) {
         await sendTelegramMessage(chatId, confirmationMsg, keyboard);
       } else {
         // Confirmation with safety warning for found items
-        let confirmationMsg = `✅ Found Item Reported Successfully!\n\nItem: ${item}\nLocation: ${location}\nYour Phone: ${reportData.contact_phone}\nDescription: ${reportData.description}\nVerification Code: ${verificationCode}\n\nSave this code - you'll need it to mark the item as claimed.`;
+        let confirmationMsg = `✅ *Found Item Reported Successfully!*\n\n`;
+        confirmationMsg += `📦 *Item:* ${item}\n`;
+        confirmationMsg += `📍 *Location:* ${location}\n`;
+        confirmationMsg += `📞 *Contact:* ${reportData.contact_phone}\n`;
+        confirmationMsg += `📝 *Description:* ${reportData.description}\n`;
+        confirmationMsg += `🔐 *Verification Code:* ${verificationCode}\n\n`;
         
         if (reportData.image_url) {
-          confirmationMsg += `\n\n📷 Image: Attached`;
+          confirmationMsg += `📷 *Image:* Attached\n`;
         }
+        
+        confirmationMsg += `⚠️ *SAFETY NOTICE:*\n`;
+        confirmationMsg += `If someone contacts you to claim this item, please:\n\n`;
+        confirmationMsg += `🔐 *Ask for key details:*\n`;
+        confirmationMsg += `• Color or size\n`;
+        confirmationMsg += `• Unique marks or scratches\n`;
+        confirmationMsg += `• Contents (if any)\n\n`;
+        confirmationMsg += `🚫 *If details are wrong:*\n`;
+        confirmationMsg += `• *Don't release the item*\n`;
+        confirmationMsg += `• *Contact KWASU WORKS*\n`;
+        confirmationMsg += `• *Share the person's phone number*\n\n`;
+        confirmationMsg += `🛡️ *This keeps our community safe.*\n`;
+        confirmationMsg += `🙏 *Thank you for your honesty!*`;
         
         const keyboard = [
           [
@@ -755,7 +846,7 @@ async function handleTelegramResponse(from, msg, chatId) {
       await remove(ref(db, `users/${userId}`));
     }
     
-    // Handle search
+    // Handle search - only show exact matches for item names
     else if (user.action === 'search') {
       const reportsRef = ref(db, 'reports');
       const reportsSnapshot = await get(reportsRef);
@@ -771,45 +862,39 @@ async function handleTelegramResponse(from, msg, chatId) {
         return;
       }
 
-      let response = `🔎 Search Results for "${msg}":\n\n`;
-      let foundLost = false;
-      let foundFound = false;
+      console.log(`[DEBUG] Manual search for exact matches of: "${msg}"`);
+      let response = `🔎 *Search Results*\n\nFound items matching "${msg}":\n\n`;
+      let found = false;
       let itemButtons = [];
       
-      // Separate lost and found items
       Object.entries(reports).forEach(([key, report]) => {
-        const searchText = `${report.item} ${report.location} ${report.description}`.toLowerCase();
-        if (searchText.includes(msg.toLowerCase())) {
-          if (report.type === 'lost') {
-            foundLost = true;
-            const status = report.recovered ? '✅ Recovered' : '❌ Not Recovered';
-            response += `${itemButtons.length + 1}. 🔍 ${report.item}\n`;
-            response += `Location: ${report.location}\n`;
-            response += `Status: ${status}\n\n`;
-            
-            if (!report.recovered) {
-              itemButtons.push([{ text: `${itemButtons.length + 1}. ${report.item}`, callback_data: `view_${key}` }]);
-            }
-          } else {
-            foundFound = true;
-            const status = report.claimed ? '✅ Claimed' : '❌ Not Claimed';
-            response += `${itemButtons.length + 1}. 🎁 ${report.item}`;
+        // Only include found items in search results
+        if (report.type === 'found') {
+          const reportItem = (report.item || '').toLowerCase().trim();
+          const searchItem = msg.toLowerCase().trim();
+          
+          // Only match if the item name is exactly the same (case-insensitive)
+          if (reportItem === searchItem) {
+            found = true;
+            response += `📦 *${report.item}*`;
             if (report.image_url) {
-              response += ` 📷`;
+              // MODIFIED: Added the requested text in front of "Has image"
+              response += ` 📷 (Go to finditkwasu.ng to see the image result) Has image`;
             }
-            response += `\nLocation: ${report.location}\n`;
-            response += `Contact: ${report.contact_phone}\n`;
-            response += `Status: ${status}\n\n`;
+            response += `\n📍 Location: ${report.location}\n`;
+            response += `📝 ${report.description || 'No description'}`;
+            response += `\n📞 Contact: ${report.contact_phone}`;
+            response += `\n⏰ ${new Date(report.timestamp).toLocaleString()}\n\n`;
             
             if (!report.claimed) {
-              itemButtons.push([{ text: `${itemButtons.length + 1}. ${report.item}`, callback_data: `view_${key}` }]);
+              itemButtons.push([{ text: `🎁 ${report.item}`, callback_data: `view_${key}` }]);
             }
           }
         }
       });
       
-      if (!foundLost && !foundFound) {
-        response += `❌ No items found matching "${msg}".\nPlease try different keywords.`;
+      if (!found) {
+        response = `❌ No found items matching "${msg}".\n\nTry searching with the exact item name.`;
       }
       
       const keyboard = [
@@ -830,44 +915,6 @@ async function handleTelegramResponse(from, msg, chatId) {
       ]
     ];
     await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.', keyboard);
-  }
-}
-
-// Helper function to find matching found items
-async function findMatchingFoundItems(searchItem) {
-  try {
-    const reportsRef = ref(db, 'reports');
-    const reportsSnapshot = await get(reportsRef);
-    const reports = reportsSnapshot.val();
-    
-    if (!reports) return [];
-    
-    const searchKeywords = searchItem.toLowerCase().split(' ');
-    const matchingItems = [];
-    
-    Object.entries(reports).forEach(([key, report]) => {
-      if (report.type === 'found') {
-        const reportText = `${report.item} ${report.description}`.toLowerCase();
-        const matchScore = searchKeywords.reduce((score, keyword) => {
-          return score + (reportText.includes(keyword) ? 1 : 0);
-        }, 0);
-        
-        // Bonus points for having an image
-        if (report.image_url) {
-          matchScore += 2;
-        }
-        
-        if (matchScore > 0) {
-          matchingItems.push({...report, matchScore});
-        }
-      }
-    });
-    
-    // Sort by match score (highest first)
-    return matchingItems.sort((a, b) => b.matchScore - a.matchScore);
-  } catch (error) {
-    console.error('Error finding matching items:', error);
-    return [];
   }
 }
 
@@ -899,4 +946,3 @@ expressApp.listen(PORT, () => {
   console.log('Telegram bot running!');
   setWebhook();
 });
-
