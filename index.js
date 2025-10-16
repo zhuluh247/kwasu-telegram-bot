@@ -220,6 +220,13 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 // Handle photo messages
 async function handlePhotoMessage(from, chatId, photo) {
   try {
+    // Add safety check for user ID
+    if (!from || from === 'undefined') {
+      console.error('Invalid user ID in handlePhotoMessage:', from);
+      await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+      return;
+    }
+    
     // Get user state
     const userSnapshot = await get(child(ref(db, `users/${from}`)));
     const user = userSnapshot.val();
@@ -492,6 +499,13 @@ async function showClaimVerification(from, chatId, reportId, statusType) {
 
 async function handleTelegramResponse(from, msg, chatId) {
   try {
+    // Add safety check for user ID
+    if (!from || from === 'undefined') {
+      console.error('Invalid user ID in handleTelegramResponse:', from);
+      await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+      return;
+    }
+    
     // Get user state
     const userRef = ref(db, `users/${from}`);
     const userSnapshot = await get(userRef);
