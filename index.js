@@ -90,18 +90,27 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const chatId = message.chat.id;
       const text = message.text;
       
-      // Add safety check for user ID
+      // Add comprehensive logging for debugging
+      console.log('Received message:', JSON.stringify(message, null, 2));
+      
+      // Add safety check for user ID with more detailed logging
       let from;
       if (message.from && message.from.id) {
         from = message.from.id.toString();
+        console.log('User ID extracted:', from);
       } else {
         console.error('User ID is missing in the message:', JSON.stringify(message));
-        await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+        try {
+          await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+        } catch (err) {
+          console.error('Error sending message to user:', err);
+        }
         return res.sendStatus(200);
       }
       
       // Handle photo messages
       if (message.photo) {
+        console.log('Handling photo message for user:', from);
         await handlePhotoMessage(from, chatId, message.photo);
         return res.sendStatus(200);
       }
@@ -136,13 +145,18 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       const chatId = callbackQuery.message.chat.id;
       const data = callbackQuery.data;
       
-      // Add safety check for user ID
+      // Add safety check for user ID with more detailed logging
       let from;
       if (callbackQuery.from && callbackQuery.from.id) {
         from = callbackQuery.from.id.toString();
+        console.log('User ID extracted from callback:', from);
       } else {
         console.error('User ID is missing in the callback query:', JSON.stringify(callbackQuery));
-        await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+        try {
+          await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+        } catch (err) {
+          console.error('Error sending message to user:', err);
+        }
         return res.sendStatus(200);
       }
       
@@ -220,18 +234,34 @@ expressApp.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 // Handle photo messages
 async function handlePhotoMessage(from, chatId, photo) {
   try {
+    // Add comprehensive logging for debugging
+    console.log('handlePhotoMessage called with from:', from, 'chatId:', chatId);
+    
     // Add safety check for user ID
-    if (!from || from === 'undefined') {
+    if (!from || from === 'undefined' || from === null) {
       console.error('Invalid user ID in handlePhotoMessage:', from);
-      await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+      try {
+        await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+      } catch (err) {
+        console.error('Error sending message to user:', err);
+      }
       return;
     }
+    
+    console.log('Getting user state for:', from);
     
     // Get user state
     const userSnapshot = await get(child(ref(db, `users/${from}`)));
     const user = userSnapshot.val();
     
-    if (!user || user.action !== 'report_found' || user.step !== 'awaiting_image') {
+    if (!user) {
+      console.error('User state not found for:', from);
+      await sendTelegramMessage(chatId, '❌ Please start by selecting "Report Found Item" from the menu. Images are only required for found items.');
+      return;
+    }
+    
+    if (user.action !== 'report_found' || user.step !== 'awaiting_image') {
+      console.error('User in wrong state:', user);
       await sendTelegramMessage(chatId, '❌ Please start by selecting "Report Found Item" from the menu. Images are only required for found items.');
       return;
     }
@@ -258,7 +288,11 @@ async function handlePhotoMessage(from, chatId, photo) {
     }
   } catch (error) {
     console.error('Handle photo message error:', error);
-    await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.');
+    try {
+      await sendTelegramMessage(chatId, '❌ An error occurred. Please try again.');
+    } catch (err) {
+      console.error('Error sending message to user:', err);
+    }
   }
 }
 
@@ -500,9 +534,13 @@ async function showClaimVerification(from, chatId, reportId, statusType) {
 async function handleTelegramResponse(from, msg, chatId) {
   try {
     // Add safety check for user ID
-    if (!from || from === 'undefined') {
+    if (!from || from === 'undefined' || from === null) {
       console.error('Invalid user ID in handleTelegramResponse:', from);
-      await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+      try {
+        await sendTelegramMessage(chatId, '❌ An error occurred: Unable to identify your account. Please try again.');
+      } catch (err) {
+        console.error('Error sending message to user:', err);
+      }
       return;
     }
     
