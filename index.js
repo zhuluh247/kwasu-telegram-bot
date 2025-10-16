@@ -871,6 +871,16 @@ async function findMatchingFoundItems(searchItem) {
   }
 }
 
+// Add this to your server files (after the existing routes)
+expressApp.get('/keep-alive', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'KWASU Lost & Found Bot'
+  });
+});
+
+
 // Set webhook
 async function setWebhook() {
   try {
@@ -889,3 +899,4 @@ expressApp.listen(PORT, () => {
   console.log('Telegram bot running!');
   setWebhook();
 });
+
